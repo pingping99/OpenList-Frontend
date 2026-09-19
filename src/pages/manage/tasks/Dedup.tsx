@@ -156,14 +156,41 @@ const getOriginalPath = (group: DedupGroup): string => {
   return sorted.length > 0 ? sorted[0].path : ""
 }
 
+const sortGroupFilesByPathLength = (group: DedupGroup): DedupFileItem[] => {
+  return [...group.files].sort((a, b) => {
+    if (a.path.length !== b.path.length) {
+      return a.path.length - b.path.length
+    }
+    const depthA = a.path.split("/").length
+    const depthB = b.path.split("/").length
+    if (depthA !== depthB) {
+      return depthA - depthB
+    }
+    const timeA = new Date(a.modified).getTime() || 0
+    const timeB = new Date(b.modified).getTime() || 0
+    if (timeA !== timeB) {
+      return timeA - timeB
+    }
+    return a.path.localeCompare(b.path)
+  })
+}
+
 const getCopiesToClean = (
   group: DedupGroup,
-  mode: "oldest" | "newest",
+  mode: "oldest" | "newest" | "shortest" | "longest",
 ): string[] => {
-  const sorted = sortGroupFiles(group)
-  if (sorted.length < 2) return []
-  const keep = mode === "newest" ? sorted[sorted.length - 1] : sorted[0]
-  return sorted.filter((f) => f.path !== keep.path).map((f) => f.path)
+  if (group.files.length < 2) return []
+  if (mode === "oldest" || mode === "newest") {
+    const sorted = sortGroupFiles(group)
+    const keep = mode === "newest" ? sorted[sorted.length - 1] : sorted[0]
+    return sorted.filter((f) => f.path !== keep.path).map((f) => f.path)
+  }
+  if (mode === "shortest" || mode === "longest") {
+    const sorted = sortGroupFilesByPathLength(group)
+    const keep = mode === "longest" ? sorted[sorted.length - 1] : sorted[0]
+    return sorted.filter((f) => f.path !== keep.path).map((f) => f.path)
+  }
+  return []
 }
 
 const calcGroupWasted = (
@@ -1249,7 +1276,10 @@ const ResultList: Component<ResultListProps> = (props) => {
     )
   }
 
-  const keepInGroup = (group: DedupGroup, mode: "oldest" | "newest") => {
+  const keepInGroup = (
+    group: DedupGroup,
+    mode: "oldest" | "newest" | "shortest" | "longest",
+  ) => {
     const targets = getCopiesToClean(group, mode)
     const all = group.files.map((f) => f.path)
     setSelectedPaths((prev) => [
@@ -1257,17 +1287,19 @@ const ResultList: Component<ResultListProps> = (props) => {
     ])
   }
 
-  const smartAll = (mode: "oldest" | "newest") => {
+  const smartAll = (mode: "oldest" | "newest" | "shortest" | "longest") => {
     const targets: string[] = []
     for (const g of groups()) {
       targets.push(...getCopiesToClean(g, mode))
     }
     setSelectedPaths([...new Set(targets)])
-    notify.success(
-      mode === "oldest"
-        ? "已一键勾选当前页每组除最旧外的所有副本"
-        : "已一键勾选当前页每组除最新外的所有副本",
-    )
+    const notifyMsgs: Record<string, string> = {
+      oldest: "已一键勾选当前页每组除最旧外的所有副本",
+      newest: "已一键勾选当前页每组除最新外的所有副本",
+      shortest: "已一键勾选当前页每组除最短路径外的所有副本 (保留最短路径)",
+      longest: "已一键勾选当前页每组除最长路径外的所有副本 (保留最长路径)",
+    }
+    notify.success(notifyMsgs[mode])
   }
 
   const smartPath = (action: "keep" | "clean") => {
@@ -1437,7 +1469,7 @@ const ResultList: Component<ResultListProps> = (props) => {
                 colorScheme="info"
                 onClick={() => smartAll("oldest")}
               >
-                保留每组最旧
+                {t("dedup.result.preset_oldest") || "保留每组最旧"}
               </Button>
               <Button
                 size="xs"
@@ -1445,7 +1477,25 @@ const ResultList: Component<ResultListProps> = (props) => {
                 colorScheme="info"
                 onClick={() => smartAll("newest")}
               >
-                保留每组最新
+                {t("dedup.result.preset_newest") || "保留每组最新"}
+              </Button>
+              <Button
+                size="xs"
+                variant="subtle"
+                colorScheme="accent"
+                onClick={() => smartAll("shortest")}
+                title="保留每组中路径最短的文件，勾选较长路径副本以便清理"
+              >
+                {t("dedup.result.preset_shortest") || "保留最短路径"}
+              </Button>
+              <Button
+                size="xs"
+                variant="subtle"
+                colorScheme="accent"
+                onClick={() => smartAll("longest")}
+                title="保留每组中路径最长的文件，勾选较短路径副本以便清理"
+              >
+                {t("dedup.result.preset_longest") || "保留最长路径"}
               </Button>
               <Input
                 size="xs"
@@ -1557,6 +1607,24 @@ const ResultList: Component<ResultListProps> = (props) => {
                         onClick={() => keepInGroup(g, "newest")}
                       >
                         {t("dedup.result.keep_newest")}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        colorScheme="neutral"
+                        onClick={() => keepInGroup(g, "shortest")}
+                        title="保留此组中路径最短的文件，勾选较长路径副本"
+                      >
+                        {t("dedup.result.keep_shortest")}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        colorScheme="neutral"
+                        onClick={() => keepInGroup(g, "longest")}
+                        title="保留此组中路径最长的文件，勾选较短路径副本"
+                      >
+                        {t("dedup.result.keep_longest")}
                       </Button>
                       <Button
                         size="xs"
