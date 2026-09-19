@@ -17,6 +17,7 @@ import {
   DedupHistoryResp,
   DedupRemoveResp,
   DedupFoldersResp,
+  DedupFolderFilesResp,
   DedupMergeFoldersReq,
   DedupMergeFoldersResp,
 } from "~/types"
@@ -390,9 +391,26 @@ export const dedupClearEmptyHistory = (): PResp<{
 
 export const dedupFolders = (
   task_id: string,
+  page: number = 1,
+  per_page: number = 20,
   threshold: number = 0.3,
+  kw?: string,
 ): PResp<DedupFoldersResp> => {
-  return r.get("/dedup/folders", { params: { task_id, threshold } })
+  return r.get("/dedup/folders", {
+    params: { task_id, page, per_page, threshold, kw: kw || undefined },
+  })
+}
+
+export const dedupFolderFiles = (
+  task_id: string,
+  dir_a: string,
+  dir_b: string,
+  page: number = 1,
+  per_page: number = 50,
+): PResp<DedupFolderFilesResp> => {
+  return r.get("/dedup/folders/files", {
+    params: { task_id, dir_a, dir_b, page, per_page },
+  })
 }
 
 export const dedupMergeFolders = (

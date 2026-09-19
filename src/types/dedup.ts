@@ -121,8 +121,16 @@ export interface DedupFolderPair {
 export interface DedupFoldersResp {
   task_id: string
   threshold: number
+  page?: number
+  per_page?: number
   total: number
   folders: DedupFolderPair[]
+}
+
+export interface DedupFolderFilesResp {
+  total: number
+  page: number
+  files: DedupFolderMatchedFile[]
 }
 
 export interface DedupMergeFoldersReq {

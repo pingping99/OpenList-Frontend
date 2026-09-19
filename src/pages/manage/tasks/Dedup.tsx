@@ -43,7 +43,7 @@ import {
 import { useSearchParams } from "@solidjs/router"
 import { Paginator } from "~/components"
 import { FolderChooseInput } from "~/components/FolderTree"
-import { useFetch, useManageTitle, useT } from "~/hooks"
+import { useFetch, useManageTitle, useT, useUtil } from "~/hooks"
 import {
   DedupGroup,
   DedupFileItem,
@@ -1814,42 +1814,63 @@ interface FolderPairListProps {
 
 const FolderPairList: Component<FolderPairListProps> = (props) => {
   const t = useT()
+  const { copy } = useUtil()
+  const [page, setPage] = createSignal(1)
+  const pageSize = 20
+  const [total, setTotal] = createSignal(0)
   const [pairs, setPairs] = createSignal<DedupFolderPair[]>([])
   const [threshold, setThreshold] = createSignal(0.3)
   const [kw, setKw] = createSignal("")
+  const [searchKw, setSearchKw] = createSignal("")
   const [expandedIndices, setExpandedIndices] = createSignal<number[]>([])
   const [fetching, getFolders] = useFetch(dedupFolders)
+  let resetPaginator: (() => void) | undefined
 
   const loadFolders = async () => {
-    if (!props.taskId) return
-    const res = await getFolders(props.taskId, threshold())
-    handleResp(res, (data) => {
-      setPairs(data.folders || [])
-      setExpandedIndices([])
-    })
+    if (!props.taskId) {
+      setPairs([])
+      setTotal(0)
+      return
+    }
+    const res = await getFolders(
+      props.taskId,
+      page(),
+      pageSize,
+      threshold(),
+      searchKw(),
+    )
+    handleResp(
+      res,
+      (data) => {
+        setPairs(data.folders ?? [])
+        setTotal(data.total ?? 0)
+        setExpandedIndices([])
+      },
+      () => {
+        setPairs([])
+        setTotal(0)
+      },
+    )
   }
 
+  // 重置页码（当任务、阈值、搜索词、刷新信号变更时）
   createEffect(() => {
-    if (props.taskId) {
-      loadFolders()
-    }
+    props.taskId
+    threshold()
+    searchKw()
+    props.refreshKey
+    setPage(1)
+    resetPaginator?.()
   })
 
+  // 依赖页码与查询条件拉取数据
   createEffect(() => {
-    if (props.refreshKey && props.taskId) {
-      loadFolders()
-    }
-  })
-
-  const filteredPairs = createMemo(() => {
-    const list = pairs()
-    const query = kw().trim().toLowerCase()
-    if (!query) return list
-    return list.filter(
-      (p) =>
-        p.dir_a.toLowerCase().includes(query) ||
-        p.dir_b.toLowerCase().includes(query),
-    )
+    props.taskId
+    threshold()
+    searchKw()
+    props.refreshKey
+    page()
+    loadFolders()
   })
 
   const toggleExpand = (idx: number) => {
@@ -1868,70 +1889,127 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
 
   return (
     <VStack spacing="$3" alignItems="stretch" mt="$2">
-      {/* 头部筛选区 */}
-      <HStack spacing="$2" flexWrap="wrap">
-        <Text fontSize="$sm" fontWeight="$medium" color="$neutral11">
-          {t("dedup.folders.threshold")}:
-        </Text>
-        <Button
-          size="xs"
-          variant={threshold() === 0.3 ? "solid" : "subtle"}
-          colorScheme="accent"
-          onClick={() => setThreshold(0.3)}
-        >
-          {t("dedup.folders.filter_all")}
-        </Button>
-        <Button
-          size="xs"
-          variant={threshold() === 0.5 ? "solid" : "subtle"}
-          colorScheme="accent"
-          onClick={() => setThreshold(0.5)}
-        >
-          {t("dedup.folders.filter_50")}
-        </Button>
-        <Button
-          size="xs"
-          variant={threshold() === 0.8 ? "solid" : "subtle"}
-          colorScheme="accent"
-          onClick={() => setThreshold(0.8)}
-        >
-          {t("dedup.folders.filter_80")}
-        </Button>
-        <Button
-          size="xs"
-          variant={threshold() === 1.0 ? "solid" : "subtle"}
-          colorScheme="accent"
-          onClick={() => setThreshold(1.0)}
-        >
-          {t("dedup.folders.filter_100")}
-        </Button>
+      {/* 头部工具栏：阈值筛选 + 路径搜索 */}
+      <Flex
+        direction={{ "@initial": "column", "@sm": "row" }}
+        justify="space-between"
+        align={{ "@initial": "stretch", "@sm": "center" }}
+        gap="$2.5"
+        p="$2.5"
+        rounded="$lg"
+        bgColor="$neutral2"
+      >
+        <HStack spacing="$1.5" flexWrap="wrap" alignItems="center">
+          <Text
+            fontSize="$xs"
+            fontWeight="$semibold"
+            color="$neutral11"
+            whiteSpace="nowrap"
+          >
+            {t("dedup.folders.threshold")}:
+          </Text>
+          <Button
+            size="xs"
+            variant={threshold() === 0.3 ? "solid" : "subtle"}
+            colorScheme="accent"
+            onClick={() => setThreshold(0.3)}
+          >
+            {t("dedup.folders.filter_all")}
+          </Button>
+          <Button
+            size="xs"
+            variant={threshold() === 0.5 ? "solid" : "subtle"}
+            colorScheme="accent"
+            onClick={() => setThreshold(0.5)}
+          >
+            {t("dedup.folders.filter_50")}
+          </Button>
+          <Button
+            size="xs"
+            variant={threshold() === 0.8 ? "solid" : "subtle"}
+            colorScheme="accent"
+            onClick={() => setThreshold(0.8)}
+          >
+            {t("dedup.folders.filter_80")}
+          </Button>
+          <Button
+            size="xs"
+            variant={threshold() === 1.0 ? "solid" : "subtle"}
+            colorScheme="accent"
+            onClick={() => setThreshold(1.0)}
+          >
+            {t("dedup.folders.filter_100")}
+          </Button>
+        </HStack>
 
-        <Spacer />
+        <HStack spacing="$2" alignItems="center">
+          <Input
+            size="xs"
+            placeholder={
+              t("dedup.folders.search_placeholder") || "搜索文件夹路径..."
+            }
+            w={{ "@initial": "100%", "@sm": "200px" }}
+            value={kw()}
+            onInput={(e: any) => setKw(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setSearchKw(kw().trim())
+              }
+            }}
+          />
+          <Button
+            size="xs"
+            colorScheme="accent"
+            variant="subtle"
+            onClick={() => setSearchKw(kw().trim())}
+          >
+            {t("common.search") || "搜索"}
+          </Button>
+          <Show when={searchKw()}>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => {
+                setKw("")
+                setSearchKw("")
+              }}
+            >
+              {t("common.clear") || "清空"}
+            </Button>
+          </Show>
+          <Button
+            size="xs"
+            variant="subtle"
+            loading={fetching()}
+            onClick={loadFolders}
+            title={t("common.refresh") || "刷新"}
+          >
+            <BsArrowRepeat />
+          </Button>
+        </HStack>
+      </Flex>
 
-        <Input
-          size="xs"
-          placeholder="搜索文件夹路径..."
-          w="180px"
-          value={kw()}
-          onInput={(e: any) => setKw(e.currentTarget.value)}
-        />
-        <Button
-          size="xs"
-          variant="subtle"
-          loading={fetching()}
-          onClick={loadFolders}
-        >
-          <BsArrowRepeat />
-        </Button>
-      </HStack>
-
-      <HStack justify="space-between">
+      {/* 说明与数量徽标 */}
+      <HStack
+        justify="space-between"
+        align="center"
+        px="$1"
+        flexWrap="wrap"
+        gap="$2"
+      >
         <Text fontSize="$xs" color="$neutral10">
           {t("dedup.folders.desc")}
         </Text>
-        <Badge colorScheme="accent">
-          {t("dedup.folders.matched_count", { count: filteredPairs().length })}
-        </Badge>
+        <HStack spacing="$2">
+          <Badge colorScheme="accent" variant="subtle">
+            {t("dedup.folders.matched_count", { count: total() })}
+          </Badge>
+          <Show when={total() > 0}>
+            <Text fontSize="$xs" color="$neutral10">
+              第 {page()} / {Math.ceil(total() / pageSize)} 页
+            </Text>
+          </Show>
+        </HStack>
       </HStack>
 
       {/* 列表加载状态 */}
@@ -1942,7 +2020,7 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
       </Show>
 
       {/* 空状态 */}
-      <Show when={!fetching() && filteredPairs().length === 0}>
+      <Show when={!fetching() && pairs().length === 0}>
         <Box
           p="$8"
           textAlign="center"
@@ -1955,8 +2033,8 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
       </Show>
 
       {/* 重复文件夹对卡片列表 */}
-      <Show when={!fetching() && filteredPairs().length > 0}>
-        <For each={filteredPairs()}>
+      <Show when={!fetching() && pairs().length > 0}>
+        <For each={pairs()}>
           {(pair, idx) => {
             const isExpanded = () => expandedIndices().includes(idx())
             const simPercent = Math.round(pair.similarity * 100)
@@ -1971,6 +2049,8 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
                 p="$3.5"
                 bgColor="$neutral1"
                 shadow="$xs"
+                transition="all 0.15s ease"
+                _hover={{ borderColor: "$accent7", shadow: "$sm" }}
               >
                 {/* 顶部指标与一键合并按钮 */}
                 <Flex
@@ -1978,207 +2058,341 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
                   align="center"
                   wrap="wrap"
                   gap="$2"
-                  pb="$2"
-                  borderBottom="1px dashed"
+                  pb="$2.5"
+                  borderBottom="1px solid"
                   borderColor="$neutral4"
                 >
-                  <HStack spacing="$2" flexWrap="wrap">
-                    <Badge colorScheme={similarityColor(pair.similarity)}>
+                  <HStack spacing="$2.5" flexWrap="wrap" alignItems="center">
+                    <Badge
+                      variant="solid"
+                      colorScheme={similarityColor(pair.similarity)}
+                    >
                       相似度 {simPercent}%
                     </Badge>
-                    <Text fontSize="$xs" color="$neutral11">
-                      重合文件:{" "}
-                      <Text as="span" fontWeight="$bold" color="$danger9">
+                    <HStack spacing="$1" fontSize="$xs" color="$neutral11">
+                      <Text color="$neutral10">
+                        {t("dedup.folders.dup_files") || "重合文件"}:
+                      </Text>
+                      <Text fontWeight="$bold" color="$danger9">
                         {pair.dup_files_count}
-                      </Text>{" "}
-                      个
-                    </Text>
-                    <Text fontSize="$xs" color="$neutral11">
-                      可释放:{" "}
-                      <Text as="span" fontWeight="$bold" color="$success10">
+                      </Text>
+                      <Text color="$neutral10">个</Text>
+                    </HStack>
+                    <HStack spacing="$1" fontSize="$xs" color="$neutral11">
+                      <Text color="$neutral10">
+                        {t("dedup.folders.reclaimable") || "可释放"}:
+                      </Text>
+                      <Text fontWeight="$bold" color="$success10">
                         {getFileSize(pair.dup_files_size)}
                       </Text>
-                    </Text>
+                    </HStack>
                   </HStack>
 
                   <HStack spacing="$2">
                     <Button
                       size="xs"
-                      variant="ghost"
+                      variant="subtle"
                       onClick={() => toggleExpand(idx())}
                     >
                       {isExpanded()
                         ? t("dedup.folders.hide_detail")
-                        : `${t("dedup.folders.view_detail")} (${
-                            pair.matched_files?.length ?? pair.dup_files_count
-                          })`}
+                        : `${t("dedup.folders.view_detail")} (${pair.dup_files_count})`}
                     </Button>
                     <Button
                       size="xs"
                       colorScheme="accent"
                       onClick={() => props.onOpenMerge(pair)}
                     >
-                      {t("dedup.folders.merge_btn")}
+                      {t("dedup.folders.merge_btn")} ➔
                     </Button>
                   </HStack>
                 </Flex>
 
-                {/* 两个文件夹对比 */}
+                {/* 两个文件夹并排对比 */}
                 <Flex
-                  direction={{ "@initial": "column", "@sm": "row" }}
+                  direction={{ "@initial": "column", "@md": "row" }}
                   gap="$3"
-                  mt="$2.5"
+                  mt="$3"
+                  alignItems="stretch"
                 >
-                  {/* 文件夹 A */}
+                  {/* 目录 A */}
                   <Box
                     flex="1"
-                    p="$2.5"
+                    p="$3"
                     rounded="$md"
                     bgColor="$neutral2"
                     border="1px solid"
-                    borderColor="$neutral4"
+                    borderColor="$info6"
+                    display="flex"
+                    flexDirection="column"
+                    justifyContent="space-between"
                   >
-                    <HStack spacing="$1.5" mb="$1">
-                      <Tag size="sm" colorScheme="info">
-                        目录 A
-                      </Tag>
+                    <Box>
+                      <HStack justify="space-between" align="center" mb="$1.5">
+                        <Tag size="sm" variant="solid" colorScheme="info">
+                          {t("dedup.folders.dir_a") || "目录 A"}
+                        </Tag>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          compact
+                          onClick={() => {
+                            copy(pair.dir_a)
+                            notify.success(
+                              t("dedup.folders.path_copied") || "路径已复制",
+                            )
+                          }}
+                          title={t("dedup.folders.copy_path") || "复制路径"}
+                        >
+                          📋
+                        </Button>
+                      </HStack>
                       <Text
                         fontSize="$xs"
-                        fontWeight="$semibold"
+                        fontWeight="$bold"
+                        color="$neutral12"
+                        lineHeight="$tall"
                         css={{ wordBreak: "break-all" }}
                       >
                         {pair.dir_a}
                       </Text>
-                    </HStack>
+                    </Box>
                     <HStack
                       spacing="$3"
+                      mt="$2"
+                      pt="$2"
+                      borderTop="1px dashed"
+                      borderColor="$neutral4"
                       fontSize="$xs"
                       color="$neutral10"
                       flexWrap="wrap"
                     >
-                      <Text>文件数: {pair.total_files_a}</Text>
-                      <Text>总大小: {getFileSize(pair.total_size_a)}</Text>
-                      <Text color="$warning10">重复占比: {ratioAPercent}%</Text>
+                      <Text>
+                        {t("dedup.folders.files_count") || "文件数"}:{" "}
+                        <Text
+                          as="span"
+                          fontWeight="$semibold"
+                          color="$neutral12"
+                        >
+                          {pair.total_files_a}
+                        </Text>
+                      </Text>
+                      <Text>
+                        {t("dedup.folders.total_size") || "总大小"}:{" "}
+                        <Text
+                          as="span"
+                          fontWeight="$semibold"
+                          color="$neutral12"
+                        >
+                          {getFileSize(pair.total_size_a)}
+                        </Text>
+                      </Text>
+                      <Text color="$warning10">
+                        {t("dedup.folders.dup_ratio") || "重复占比"}:{" "}
+                        <Text as="span" fontWeight="$bold">
+                          {ratioAPercent}%
+                        </Text>
+                      </Text>
                       <Text color="$neutral9">
-                        独有: {pair.total_files_a - pair.dup_files_count}
+                        {t("dedup.folders.unique_files") || "独有"}:{" "}
+                        {pair.total_files_a - pair.dup_files_count}
                       </Text>
                     </HStack>
                   </Box>
 
-                  {/* 文件夹 B */}
+                  {/* 目录 B */}
                   <Box
                     flex="1"
-                    p="$2.5"
+                    p="$3"
                     rounded="$md"
                     bgColor="$neutral2"
                     border="1px solid"
-                    borderColor="$neutral4"
+                    borderColor="$accent6"
+                    display="flex"
+                    flexDirection="column"
+                    justifyContent="space-between"
                   >
-                    <HStack spacing="$1.5" mb="$1">
-                      <Tag size="sm" colorScheme="accent">
-                        目录 B
-                      </Tag>
+                    <Box>
+                      <HStack justify="space-between" align="center" mb="$1.5">
+                        <Tag size="sm" variant="solid" colorScheme="accent">
+                          {t("dedup.folders.dir_b") || "目录 B"}
+                        </Tag>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          compact
+                          onClick={() => {
+                            copy(pair.dir_b)
+                            notify.success(
+                              t("dedup.folders.path_copied") || "路径已复制",
+                            )
+                          }}
+                          title={t("dedup.folders.copy_path") || "复制路径"}
+                        >
+                          📋
+                        </Button>
+                      </HStack>
                       <Text
                         fontSize="$xs"
-                        fontWeight="$semibold"
+                        fontWeight="$bold"
+                        color="$neutral12"
+                        lineHeight="$tall"
                         css={{ wordBreak: "break-all" }}
                       >
                         {pair.dir_b}
                       </Text>
-                    </HStack>
+                    </Box>
                     <HStack
                       spacing="$3"
+                      mt="$2"
+                      pt="$2"
+                      borderTop="1px dashed"
+                      borderColor="$neutral4"
                       fontSize="$xs"
                       color="$neutral10"
                       flexWrap="wrap"
                     >
-                      <Text>文件数: {pair.total_files_b}</Text>
-                      <Text>总大小: {getFileSize(pair.total_size_b)}</Text>
-                      <Text color="$warning10">重复占比: {ratioBPercent}%</Text>
+                      <Text>
+                        {t("dedup.folders.files_count") || "文件数"}:{" "}
+                        <Text
+                          as="span"
+                          fontWeight="$semibold"
+                          color="$neutral12"
+                        >
+                          {pair.total_files_b}
+                        </Text>
+                      </Text>
+                      <Text>
+                        {t("dedup.folders.total_size") || "总大小"}:{" "}
+                        <Text
+                          as="span"
+                          fontWeight="$semibold"
+                          color="$neutral12"
+                        >
+                          {getFileSize(pair.total_size_b)}
+                        </Text>
+                      </Text>
+                      <Text color="$warning10">
+                        {t("dedup.folders.dup_ratio") || "重复占比"}:{" "}
+                        <Text as="span" fontWeight="$bold">
+                          {ratioBPercent}%
+                        </Text>
+                      </Text>
                       <Text color="$neutral9">
-                        独有: {pair.total_files_b - pair.dup_files_count}
+                        {t("dedup.folders.unique_files") || "独有"}:{" "}
+                        {pair.total_files_b - pair.dup_files_count}
                       </Text>
                     </HStack>
                   </Box>
                 </Flex>
 
                 {/* 展开比对明细 */}
-                <Show
-                  when={
-                    isExpanded() &&
-                    pair.matched_files &&
-                    pair.matched_files.length > 0
-                  }
-                >
+                <Show when={isExpanded()}>
                   <Box
                     mt="$3"
-                    p="$2.5"
+                    p="$3"
                     rounded="$md"
                     bgColor="$neutral2"
                     border="1px solid"
                     borderColor="$neutral4"
-                    maxH="240px"
-                    overflowY="auto"
                   >
-                    <Text
-                      fontSize="$xs"
-                      fontWeight="$bold"
-                      color="$neutral11"
-                      mb="$2"
-                    >
-                      重合文件清单 ({pair.matched_files!.length} 个)：
-                    </Text>
-                    <VStack spacing="$1.5" alignItems="stretch">
-                      <For each={pair.matched_files}>
-                        {(f) => (
-                          <Flex
-                            direction={{ "@initial": "column", "@sm": "row" }}
-                            justify="space-between"
-                            p="$1.5"
-                            rounded="$sm"
-                            bgColor="$neutral1"
-                            fontSize="$xs"
-                            gap="$1"
+                    <HStack justify="space-between" mb="$2" flexWrap="wrap">
+                      <Text
+                        fontSize="$xs"
+                        fontWeight="$bold"
+                        color="$neutral11"
+                      >
+                        {t("dedup.folders.dup_files") || "重合文件清单"} (
+                        {pair.matched_files?.length || 0} 个)
+                        <Show
+                          when={
+                            (pair.matched_files?.length || 0) <
+                            pair.dup_files_count
+                          }
+                        >
+                          <Text
+                            as="span"
+                            fontWeight="$normal"
+                            color="$neutral10"
+                            ml="$1"
                           >
-                            <VStack
-                              spacing="$0.5"
-                              alignItems="flex-start"
-                              flex="1"
-                            >
-                              <Text
-                                color="$neutral11"
-                                css={{ wordBreak: "break-all" }}
-                              >
-                                📄 A: {f.name_a}
-                              </Text>
-                              <Show when={f.name_a !== f.name_b}>
-                                <Text
-                                  color="$neutral9"
-                                  css={{ wordBreak: "break-all" }}
-                                >
-                                  📄 B: {f.name_b}
-                                </Text>
-                              </Show>
-                            </VStack>
-                            <Badge
-                              colorScheme="neutral"
-                              alignSelf={{
+                            {t("dedup.folders.preview_limit_tip", {
+                              count: pair.matched_files?.length || 0,
+                              total: pair.dup_files_count,
+                            })}
+                          </Text>
+                        </Show>
+                      </Text>
+                    </HStack>
+                    <Box maxH="240px" overflowY="auto">
+                      <VStack spacing="$1.5" alignItems="stretch">
+                        <For each={pair.matched_files}>
+                          {(f) => (
+                            <Flex
+                              direction={{ "@initial": "column", "@sm": "row" }}
+                              justify="space-between"
+                              align={{
                                 "@initial": "flex-start",
                                 "@sm": "center",
                               }}
+                              p="$2"
+                              rounded="$sm"
+                              bgColor="$neutral1"
+                              fontSize="$xs"
+                              gap="$1"
                             >
-                              {getFileSize(f.size)}
-                            </Badge>
-                          </Flex>
-                        )}
-                      </For>
-                    </VStack>
+                              <VStack
+                                spacing="$0.5"
+                                alignItems="flex-start"
+                                flex="1"
+                              >
+                                <Text
+                                  color="$neutral11"
+                                  css={{ wordBreak: "break-all" }}
+                                >
+                                  📄 {f.name_a}
+                                </Text>
+                                <Show when={f.name_a !== f.name_b}>
+                                  <Text
+                                    color="$neutral9"
+                                    css={{ wordBreak: "break-all" }}
+                                  >
+                                    ↳ B: {f.name_b}
+                                  </Text>
+                                </Show>
+                              </VStack>
+                              <Badge
+                                colorScheme="neutral"
+                                alignSelf={{
+                                  "@initial": "flex-start",
+                                  "@sm": "center",
+                                }}
+                              >
+                                {getFileSize(f.size)}
+                              </Badge>
+                            </Flex>
+                          )}
+                        </For>
+                      </VStack>
+                    </Box>
                   </Box>
                 </Show>
               </Box>
             )
           }}
         </For>
+      </Show>
+
+      {/* 分页导航 */}
+      <Show when={total() > pageSize}>
+        <Flex justify="center" pt="$2">
+          <Paginator
+            total={total()}
+            defaultPageSize={pageSize}
+            onChange={(p) => setPage(p)}
+            setResetCallback={(fn) => (resetPaginator = fn)}
+          />
+        </Flex>
       </Show>
     </VStack>
   )

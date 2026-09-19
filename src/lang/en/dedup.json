@@ -99,7 +99,19 @@
     "strategy_overwrite": "Overwrite target files",
     "warning_tip": "After merging, duplicate files in the source directory will be permanently deleted, unique files will be moved to the target directory, and the empty source directory will be removed.",
     "confirm_merge": "Confirm One-click Merge",
-    "merge_success": "Merge complete: deleted {{deleted}} duplicates, moved {{moved}} unique files, reclaimed {{reclaimed}}"
+    "merge_success": "Merge complete: deleted {{deleted}} duplicates, moved {{moved}} unique files, reclaimed {{reclaimed}}",
+    "search_placeholder": "Search folder paths...",
+    "preview_limit_tip": "(Showing first {{count}} files, total {{total}})",
+    "copy_path": "Copy Path",
+    "path_copied": "Path copied",
+    "dir_a": "Directory A",
+    "dir_b": "Directory B",
+    "files_count": "Files",
+    "total_size": "Total Size",
+    "dup_ratio": "Dup Ratio",
+    "unique_files": "Unique Files",
+    "dup_files": "Matched Files",
+    "reclaimable": "Reclaimable"
   },
   "history": {
     "empty": "No history scan records",
