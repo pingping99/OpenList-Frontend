@@ -17,6 +17,7 @@
   "tabs": {
     "duplicates": "Verified Duplicates",
     "candidates": "Name & Size Candidates",
+    "folders": "Duplicate Folders",
     "history": "History"
   },
   "stats": {
@@ -69,6 +70,30 @@
     "errored": "Errored",
     "interrupted": "Interrupted",
     "unknown": "Unknown"
+  },
+  "folders": {
+    "title": "Duplicate Folders Recognition & Merge",
+    "desc": "Automatically list folder pairs with >30% file duplication, supporting one-click merge and cleanup",
+    "threshold": "Duplication Threshold",
+    "filter_all": "All (≥30%)",
+    "filter_50": "≥50%",
+    "filter_80": "≥80%",
+    "filter_100": "100% Full Duplicate",
+    "empty": "No duplicate folders found (similarity ≥ 30%)",
+    "matched_count": "Found {{count}} duplicate folder pairs",
+    "merge_btn": "One-click Merge",
+    "view_detail": "Compare Details",
+    "hide_detail": "Hide Details",
+    "modal_title": "Confirm One-click Folder Merge",
+    "modal_desc": "Merge contents of two folders into one, automatically deleting duplicates and migrating unique files",
+    "select_target": "Select the target directory to keep:",
+    "strategy_label": "Name collision strategy for different files:",
+    "strategy_rename": "Auto rename & keep (Recommended)",
+    "strategy_skip": "Skip conflicting files",
+    "strategy_overwrite": "Overwrite target files",
+    "warning_tip": "After merging, duplicate files in the source directory will be permanently deleted, unique files will be moved to the target directory, and the empty source directory will be removed.",
+    "confirm_merge": "Confirm One-click Merge",
+    "merge_success": "Merge complete: deleted {{deleted}} duplicates, moved {{moved}} unique files, reclaimed {{reclaimed}}"
   },
   "history": {
     "empty": "No history scan records",

@@ -93,3 +93,51 @@ export interface DedupRemoveResp {
   rejected: { path: string; reason: string }[]
   errors: string[]
 }
+
+export interface DedupFolderMatchedFile {
+  path_a: string
+  path_b: string
+  name_a: string
+  name_b: string
+  size: number
+  group_key: string
+}
+
+export interface DedupFolderPair {
+  dir_a: string
+  dir_b: string
+  total_files_a: number
+  total_files_b: number
+  total_size_a: number
+  total_size_b: number
+  dup_files_count: number
+  dup_files_size: number
+  ratio_a: number
+  ratio_b: number
+  similarity: number
+  matched_files?: DedupFolderMatchedFile[]
+}
+
+export interface DedupFoldersResp {
+  task_id: string
+  threshold: number
+  total: number
+  folders: DedupFolderPair[]
+}
+
+export interface DedupMergeFoldersReq {
+  task_id: string
+  source_dir: string
+  target_dir: string
+  conflict_strategy?: "rename" | "skip" | "overwrite"
+}
+
+export interface DedupMergeFoldersResp {
+  source_dir: string
+  target_dir: string
+  deleted_dup_files: number
+  moved_unique_files: number
+  reclaimed_bytes: number
+  source_removed: boolean
+  errors?: string[]
+}

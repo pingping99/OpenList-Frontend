@@ -50,6 +50,9 @@ import {
   DedupTaskHistoryItem,
   DedupStatusResp,
   DedupRemoveResp,
+  DedupFolderPair,
+  DedupFolderMatchedFile,
+  DedupMergeFoldersResp,
 } from "~/types"
 import { formatDate, getFileSize, handleResp, notify } from "~/utils"
 import {
@@ -61,6 +64,8 @@ import {
   dedupHistory,
   dedupDeleteHistory,
   dedupClearEmptyHistory,
+  dedupFolders,
+  dedupMergeFolders,
 } from "~/utils/api"
 import { BsSearch, BsArrowRepeat } from "solid-icons/bs"
 
@@ -439,6 +444,346 @@ const CleanModal: Component<CleanModalProps> = (props) => {
               onClick={handleClean}
             >
               {t("dedup.clean.confirm")}
+            </Button>
+          </Show>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  )
+}
+
+// ==================== MergeFoldersModal 组件 ====================
+
+interface MergeFoldersModalProps {
+  taskId: string
+  pair: DedupFolderPair | null
+  opened: boolean
+  onClose: () => void
+  onDone: () => void
+}
+
+const MergeFoldersModal: Component<MergeFoldersModalProps> = (props) => {
+  const t = useT()
+  const [targetChoice, setTargetChoice] = createSignal<"A" | "B">("A")
+  const [strategy, setStrategy] = createSignal<"rename" | "skip" | "overwrite">(
+    "rename",
+  )
+  const [merging, doMerge] = useFetch(dedupMergeFolders)
+  const [result, setResult] = createSignal<DedupMergeFoldersResp | null>(null)
+
+  createEffect(() => {
+    if (props.pair) {
+      setTargetChoice("A")
+      setResult(null)
+    }
+  })
+
+  const targetDir = () =>
+    (targetChoice() === "A" ? props.pair?.dir_a : props.pair?.dir_b) ?? ""
+  const sourceDir = () =>
+    (targetChoice() === "A" ? props.pair?.dir_b : props.pair?.dir_a) ?? ""
+
+  const toDeleteCount = () => props.pair?.dup_files_count ?? 0
+  const toDeleteSize = () => props.pair?.dup_files_size ?? 0
+  const toMigrateCount = () => {
+    if (!props.pair) return 0
+    return targetChoice() === "A"
+      ? Math.max(0, props.pair.total_files_b - props.pair.dup_files_count)
+      : Math.max(0, props.pair.total_files_a - props.pair.dup_files_count)
+  }
+
+  const handleMerge = async () => {
+    if (!props.pair || !props.taskId) return
+    const res = await doMerge({
+      task_id: props.taskId,
+      source_dir: sourceDir(),
+      target_dir: targetDir(),
+      conflict_strategy: strategy(),
+    })
+    handleResp(res, (data) => {
+      setResult(data)
+      notify.success(
+        t("dedup.folders.merge_success", {
+          deleted: data.deleted_dup_files,
+          moved: data.moved_unique_files,
+          reclaimed: getFileSize(data.reclaimed_bytes),
+        }),
+      )
+      props.onDone()
+    })
+  }
+
+  return (
+    <Modal
+      opened={props.opened}
+      onClose={() => {
+        if (!merging()) props.onClose()
+      }}
+      size="lg"
+    >
+      <ModalOverlay />
+      <ModalContent>
+        <ModalCloseButton />
+        <ModalHeader>{t("dedup.folders.modal_title")}</ModalHeader>
+        <ModalBody>
+          <Show
+            when={result()}
+            fallback={
+              <VStack spacing="$4" alignItems="stretch">
+                <Text fontSize="$sm" color="$neutral10">
+                  {t("dedup.folders.modal_desc")}
+                </Text>
+
+                {/* 目标文件夹选择 */}
+                <Box>
+                  <Text fontWeight="$medium" fontSize="$sm" mb="$2">
+                    {t("dedup.folders.select_target")}
+                  </Text>
+                  <VStack spacing="$2" alignItems="stretch">
+                    <Box
+                      p="$3"
+                      rounded="$md"
+                      border="2px solid"
+                      borderColor={
+                        targetChoice() === "A" ? "$accent9" : "$neutral6"
+                      }
+                      bgColor={
+                        targetChoice() === "A" ? "$accent2" : "$neutral1"
+                      }
+                      cursor="pointer"
+                      onClick={() => setTargetChoice("A")}
+                      transition="all 0.2s"
+                    >
+                      <HStack spacing="$2">
+                        <Badge
+                          colorScheme={
+                            targetChoice() === "A" ? "accent" : "neutral"
+                          }
+                        >
+                          {targetChoice() === "A" ? "✓ 保留为目标" : "设为目标"}
+                        </Badge>
+                        <Text
+                          fontWeight="$semibold"
+                          fontSize="$sm"
+                          css={{ wordBreak: "break-all" }}
+                        >
+                          {props.pair?.dir_a}
+                        </Text>
+                      </HStack>
+                      <Text fontSize="$xs" color="$neutral10" mt="$1">
+                        包含 {props.pair?.total_files_a} 个文件 (
+                        {getFileSize(props.pair?.total_size_a ?? 0)})
+                      </Text>
+                    </Box>
+
+                    <Box
+                      p="$3"
+                      rounded="$md"
+                      border="2px solid"
+                      borderColor={
+                        targetChoice() === "B" ? "$accent9" : "$neutral6"
+                      }
+                      bgColor={
+                        targetChoice() === "B" ? "$accent2" : "$neutral1"
+                      }
+                      cursor="pointer"
+                      onClick={() => setTargetChoice("B")}
+                      transition="all 0.2s"
+                    >
+                      <HStack spacing="$2">
+                        <Badge
+                          colorScheme={
+                            targetChoice() === "B" ? "accent" : "neutral"
+                          }
+                        >
+                          {targetChoice() === "B" ? "✓ 保留为目标" : "设为目标"}
+                        </Badge>
+                        <Text
+                          fontWeight="$semibold"
+                          fontSize="$sm"
+                          css={{ wordBreak: "break-all" }}
+                        >
+                          {props.pair?.dir_b}
+                        </Text>
+                      </HStack>
+                      <Text fontSize="$xs" color="$neutral10" mt="$1">
+                        包含 {props.pair?.total_files_b} 个文件 (
+                        {getFileSize(props.pair?.total_size_b ?? 0)})
+                      </Text>
+                    </Box>
+                  </VStack>
+                </Box>
+
+                {/* 合并执行摘要 */}
+                <Box p="$3" rounded="$md" bgColor="$neutral3">
+                  <Text
+                    fontWeight="$medium"
+                    fontSize="$xs"
+                    color="$neutral11"
+                    mb="$1"
+                  >
+                    合并操作预览：
+                  </Text>
+                  <VStack
+                    spacing="$1"
+                    alignItems="flex-start"
+                    fontSize="$xs"
+                    color="$neutral11"
+                  >
+                    <Text>
+                      • 源文件夹：
+                      <Text as="span" color="$danger9" fontWeight="$semibold">
+                        {sourceDir()}
+                      </Text>
+                    </Text>
+                    <Text>
+                      • 目标文件夹：
+                      <Text as="span" color="$success9" fontWeight="$semibold">
+                        {targetDir()}
+                      </Text>
+                    </Text>
+                    <Text>
+                      • 从源文件夹删除重复文件：
+                      <Text as="span" color="$danger9" fontWeight="$bold">
+                        {toDeleteCount()}
+                      </Text>{" "}
+                      个 (预计释放空间 {getFileSize(toDeleteSize())})
+                    </Text>
+                    <Text>
+                      • 迁移源文件夹独有文件至目标：
+                      <Text as="span" color="$accent9" fontWeight="$bold">
+                        {toMigrateCount()}
+                      </Text>{" "}
+                      个
+                    </Text>
+                    <Text>• 完成后自动清理源文件夹空目录</Text>
+                  </VStack>
+                </Box>
+
+                {/* 冲突处理策略 */}
+                <Box>
+                  <Text fontWeight="$medium" fontSize="$xs" mb="$2">
+                    {t("dedup.folders.strategy_label")}
+                  </Text>
+                  <HStack spacing="$2" flexWrap="wrap">
+                    <Button
+                      size="xs"
+                      variant={strategy() === "rename" ? "solid" : "subtle"}
+                      colorScheme={
+                        strategy() === "rename" ? "accent" : "neutral"
+                      }
+                      onClick={() => setStrategy("rename")}
+                    >
+                      {t("dedup.folders.strategy_rename")}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant={strategy() === "skip" ? "solid" : "subtle"}
+                      colorScheme={
+                        strategy() === "skip" ? "warning" : "neutral"
+                      }
+                      onClick={() => setStrategy("skip")}
+                    >
+                      {t("dedup.folders.strategy_skip")}
+                    </Button>
+                    <Button
+                      size="xs"
+                      variant={strategy() === "overwrite" ? "solid" : "subtle"}
+                      colorScheme={
+                        strategy() === "overwrite" ? "danger" : "neutral"
+                      }
+                      onClick={() => setStrategy("overwrite")}
+                    >
+                      {t("dedup.folders.strategy_overwrite")}
+                    </Button>
+                  </HStack>
+                </Box>
+
+                {/* 警示提示 */}
+                <Box
+                  p="$2.5"
+                  rounded="$md"
+                  bgColor="$warning3"
+                  border="1px solid"
+                  borderColor="$warning6"
+                >
+                  <Text fontSize="$xs" color="$warning11">
+                    ⚠️ {t("dedup.folders.warning_tip")}
+                  </Text>
+                </Box>
+              </VStack>
+            }
+          >
+            {/* 合并结果展示 */}
+            <VStack spacing="$3" alignItems="stretch" p="$2">
+              <Box
+                p="$4"
+                rounded="$md"
+                bgColor="$success2"
+                border="1px solid"
+                borderColor="$success6"
+                textAlign="center"
+              >
+                <Text
+                  fontSize="$base"
+                  fontWeight="$bold"
+                  color="$success11"
+                  mb="$2"
+                >
+                  🎉 文件夹合并完成！
+                </Text>
+                <Text fontSize="$sm" color="$neutral11">
+                  删除了{" "}
+                  <Text as="span" fontWeight="$bold" color="$danger9">
+                    {result()!.deleted_dup_files}
+                  </Text>{" "}
+                  个重复文件
+                </Text>
+                <Text fontSize="$sm" color="$neutral11">
+                  移动了{" "}
+                  <Text as="span" fontWeight="$bold" color="$accent9">
+                    {result()!.moved_unique_files}
+                  </Text>{" "}
+                  个独有文件
+                </Text>
+                <Text fontSize="$sm" color="$neutral11">
+                  释放空间：{" "}
+                  <Text as="span" fontWeight="$bold" color="$success10">
+                    {getFileSize(result()!.reclaimed_bytes)}
+                  </Text>
+                </Text>
+                <Show when={result()!.source_removed}>
+                  <Text fontSize="$xs" color="$neutral10" mt="$1">
+                    源文件夹已成功清除
+                  </Text>
+                </Show>
+                <Show when={result()!.errors && result()!.errors!.length > 0}>
+                  <Box mt="$2" p="$2" rounded="$md" bgColor="$danger2">
+                    <For each={result()!.errors}>
+                      {(err) => (
+                        <Text fontSize="$xs" color="$danger9">
+                          {err}
+                        </Text>
+                      )}
+                    </For>
+                  </Box>
+                </Show>
+              </Box>
+            </VStack>
+          </Show>
+        </ModalBody>
+        <ModalFooter display="flex" gap="$2">
+          <Spacer />
+          <Button onClick={props.onClose} colorScheme="neutral">
+            {result() ? t("global.close") : t("global.cancel")}
+          </Button>
+          <Show when={!result()}>
+            <Button
+              colorScheme="accent"
+              loading={merging()}
+              onClick={handleMerge}
+            >
+              {t("dedup.folders.confirm_merge")}
             </Button>
           </Show>
         </ModalFooter>
@@ -1391,6 +1736,386 @@ const ResultList: Component<ResultListProps> = (props) => {
   )
 }
 
+// ==================== FolderPairList 组件 ====================
+
+interface FolderPairListProps {
+  taskId: string
+  refreshKey: number
+  onOpenMerge: (pair: DedupFolderPair) => void
+}
+
+const FolderPairList: Component<FolderPairListProps> = (props) => {
+  const t = useT()
+  const [pairs, setPairs] = createSignal<DedupFolderPair[]>([])
+  const [threshold, setThreshold] = createSignal(0.3)
+  const [kw, setKw] = createSignal("")
+  const [expandedIndices, setExpandedIndices] = createSignal<number[]>([])
+  const [fetching, getFolders] = useFetch(dedupFolders)
+
+  const loadFolders = async () => {
+    if (!props.taskId) return
+    const res = await getFolders(props.taskId, threshold())
+    handleResp(res, (data) => {
+      setPairs(data.folders || [])
+      setExpandedIndices([])
+    })
+  }
+
+  createEffect(() => {
+    if (props.taskId) {
+      loadFolders()
+    }
+  })
+
+  createEffect(() => {
+    if (props.refreshKey && props.taskId) {
+      loadFolders()
+    }
+  })
+
+  const filteredPairs = createMemo(() => {
+    const list = pairs()
+    const query = kw().trim().toLowerCase()
+    if (!query) return list
+    return list.filter(
+      (p) =>
+        p.dir_a.toLowerCase().includes(query) ||
+        p.dir_b.toLowerCase().includes(query),
+    )
+  })
+
+  const toggleExpand = (idx: number) => {
+    if (expandedIndices().includes(idx)) {
+      setExpandedIndices(expandedIndices().filter((i) => i !== idx))
+    } else {
+      setExpandedIndices([...expandedIndices(), idx])
+    }
+  }
+
+  const similarityColor = (sim: number): "success" | "warning" | "info" => {
+    if (sim >= 0.8) return "success"
+    if (sim >= 0.5) return "warning"
+    return "info"
+  }
+
+  return (
+    <VStack spacing="$3" alignItems="stretch" mt="$2">
+      {/* 头部筛选区 */}
+      <HStack spacing="$2" flexWrap="wrap">
+        <Text fontSize="$sm" fontWeight="$medium" color="$neutral11">
+          {t("dedup.folders.threshold")}:
+        </Text>
+        <Button
+          size="xs"
+          variant={threshold() === 0.3 ? "solid" : "subtle"}
+          colorScheme="accent"
+          onClick={() => setThreshold(0.3)}
+        >
+          {t("dedup.folders.filter_all")}
+        </Button>
+        <Button
+          size="xs"
+          variant={threshold() === 0.5 ? "solid" : "subtle"}
+          colorScheme="accent"
+          onClick={() => setThreshold(0.5)}
+        >
+          {t("dedup.folders.filter_50")}
+        </Button>
+        <Button
+          size="xs"
+          variant={threshold() === 0.8 ? "solid" : "subtle"}
+          colorScheme="accent"
+          onClick={() => setThreshold(0.8)}
+        >
+          {t("dedup.folders.filter_80")}
+        </Button>
+        <Button
+          size="xs"
+          variant={threshold() === 1.0 ? "solid" : "subtle"}
+          colorScheme="accent"
+          onClick={() => setThreshold(1.0)}
+        >
+          {t("dedup.folders.filter_100")}
+        </Button>
+
+        <Spacer />
+
+        <Input
+          size="xs"
+          placeholder="搜索文件夹路径..."
+          w="180px"
+          value={kw()}
+          onInput={(e: any) => setKw(e.currentTarget.value)}
+        />
+        <Button
+          size="xs"
+          variant="subtle"
+          loading={fetching()}
+          onClick={loadFolders}
+        >
+          <BsArrowRepeat />
+        </Button>
+      </HStack>
+
+      <HStack justify="space-between">
+        <Text fontSize="$xs" color="$neutral10">
+          {t("dedup.folders.desc")}
+        </Text>
+        <Badge colorScheme="accent">
+          {t("dedup.folders.matched_count", { count: filteredPairs().length })}
+        </Badge>
+      </HStack>
+
+      {/* 列表加载状态 */}
+      <Show when={fetching()}>
+        <Flex justify="center" p="$8">
+          <Spinner />
+        </Flex>
+      </Show>
+
+      {/* 空状态 */}
+      <Show when={!fetching() && filteredPairs().length === 0}>
+        <Box
+          p="$8"
+          textAlign="center"
+          rounded="$lg"
+          bgColor="$neutral2"
+          color="$neutral10"
+        >
+          {t("dedup.folders.empty")}
+        </Box>
+      </Show>
+
+      {/* 重复文件夹对卡片列表 */}
+      <Show when={!fetching() && filteredPairs().length > 0}>
+        <For each={filteredPairs()}>
+          {(pair, idx) => {
+            const isExpanded = () => expandedIndices().includes(idx())
+            const simPercent = Math.round(pair.similarity * 100)
+            const ratioAPercent = (pair.ratio_a * 100).toFixed(0)
+            const ratioBPercent = (pair.ratio_b * 100).toFixed(0)
+
+            return (
+              <Box
+                border="1px solid"
+                borderColor="$neutral5"
+                rounded="$lg"
+                p="$3.5"
+                bgColor="$neutral1"
+                shadow="$xs"
+              >
+                {/* 顶部指标与一键合并按钮 */}
+                <Flex
+                  justify="space-between"
+                  align="center"
+                  wrap="wrap"
+                  gap="$2"
+                  pb="$2"
+                  borderBottom="1px dashed"
+                  borderColor="$neutral4"
+                >
+                  <HStack spacing="$2" flexWrap="wrap">
+                    <Badge colorScheme={similarityColor(pair.similarity)}>
+                      相似度 {simPercent}%
+                    </Badge>
+                    <Text fontSize="$xs" color="$neutral11">
+                      重合文件:{" "}
+                      <Text as="span" fontWeight="$bold" color="$danger9">
+                        {pair.dup_files_count}
+                      </Text>{" "}
+                      个
+                    </Text>
+                    <Text fontSize="$xs" color="$neutral11">
+                      可释放:{" "}
+                      <Text as="span" fontWeight="$bold" color="$success10">
+                        {getFileSize(pair.dup_files_size)}
+                      </Text>
+                    </Text>
+                  </HStack>
+
+                  <HStack spacing="$2">
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      onClick={() => toggleExpand(idx())}
+                    >
+                      {isExpanded()
+                        ? t("dedup.folders.hide_detail")
+                        : `${t("dedup.folders.view_detail")} (${
+                            pair.matched_files?.length ?? pair.dup_files_count
+                          })`}
+                    </Button>
+                    <Button
+                      size="xs"
+                      colorScheme="accent"
+                      onClick={() => props.onOpenMerge(pair)}
+                    >
+                      {t("dedup.folders.merge_btn")}
+                    </Button>
+                  </HStack>
+                </Flex>
+
+                {/* 两个文件夹对比 */}
+                <Flex
+                  direction={{ "@initial": "column", "@sm": "row" }}
+                  gap="$3"
+                  mt="$2.5"
+                >
+                  {/* 文件夹 A */}
+                  <Box
+                    flex="1"
+                    p="$2.5"
+                    rounded="$md"
+                    bgColor="$neutral2"
+                    border="1px solid"
+                    borderColor="$neutral4"
+                  >
+                    <HStack spacing="$1.5" mb="$1">
+                      <Tag size="sm" colorScheme="info">
+                        目录 A
+                      </Tag>
+                      <Text
+                        fontSize="$xs"
+                        fontWeight="$semibold"
+                        css={{ wordBreak: "break-all" }}
+                      >
+                        {pair.dir_a}
+                      </Text>
+                    </HStack>
+                    <HStack
+                      spacing="$3"
+                      fontSize="$xs"
+                      color="$neutral10"
+                      flexWrap="wrap"
+                    >
+                      <Text>文件数: {pair.total_files_a}</Text>
+                      <Text>总大小: {getFileSize(pair.total_size_a)}</Text>
+                      <Text color="$warning10">重复占比: {ratioAPercent}%</Text>
+                      <Text color="$neutral9">
+                        独有: {pair.total_files_a - pair.dup_files_count}
+                      </Text>
+                    </HStack>
+                  </Box>
+
+                  {/* 文件夹 B */}
+                  <Box
+                    flex="1"
+                    p="$2.5"
+                    rounded="$md"
+                    bgColor="$neutral2"
+                    border="1px solid"
+                    borderColor="$neutral4"
+                  >
+                    <HStack spacing="$1.5" mb="$1">
+                      <Tag size="sm" colorScheme="accent">
+                        目录 B
+                      </Tag>
+                      <Text
+                        fontSize="$xs"
+                        fontWeight="$semibold"
+                        css={{ wordBreak: "break-all" }}
+                      >
+                        {pair.dir_b}
+                      </Text>
+                    </HStack>
+                    <HStack
+                      spacing="$3"
+                      fontSize="$xs"
+                      color="$neutral10"
+                      flexWrap="wrap"
+                    >
+                      <Text>文件数: {pair.total_files_b}</Text>
+                      <Text>总大小: {getFileSize(pair.total_size_b)}</Text>
+                      <Text color="$warning10">重复占比: {ratioBPercent}%</Text>
+                      <Text color="$neutral9">
+                        独有: {pair.total_files_b - pair.dup_files_count}
+                      </Text>
+                    </HStack>
+                  </Box>
+                </Flex>
+
+                {/* 展开比对明细 */}
+                <Show
+                  when={
+                    isExpanded() &&
+                    pair.matched_files &&
+                    pair.matched_files.length > 0
+                  }
+                >
+                  <Box
+                    mt="$3"
+                    p="$2.5"
+                    rounded="$md"
+                    bgColor="$neutral2"
+                    border="1px solid"
+                    borderColor="$neutral4"
+                    maxH="240px"
+                    overflowY="auto"
+                  >
+                    <Text
+                      fontSize="$xs"
+                      fontWeight="$bold"
+                      color="$neutral11"
+                      mb="$2"
+                    >
+                      重合文件清单 ({pair.matched_files!.length} 个)：
+                    </Text>
+                    <VStack spacing="$1.5" alignItems="stretch">
+                      <For each={pair.matched_files}>
+                        {(f) => (
+                          <Flex
+                            direction={{ "@initial": "column", "@sm": "row" }}
+                            justify="space-between"
+                            p="$1.5"
+                            rounded="$sm"
+                            bgColor="$neutral1"
+                            fontSize="$xs"
+                            gap="$1"
+                          >
+                            <VStack
+                              spacing="$0.5"
+                              alignItems="flex-start"
+                              flex="1"
+                            >
+                              <Text
+                                color="$neutral11"
+                                css={{ wordBreak: "break-all" }}
+                              >
+                                📄 A: {f.name_a}
+                              </Text>
+                              <Show when={f.name_a !== f.name_b}>
+                                <Text
+                                  color="$neutral9"
+                                  css={{ wordBreak: "break-all" }}
+                                >
+                                  📄 B: {f.name_b}
+                                </Text>
+                              </Show>
+                            </VStack>
+                            <Badge
+                              colorScheme="neutral"
+                              alignSelf={{
+                                "@initial": "flex-start",
+                                "@sm": "center",
+                              }}
+                            >
+                              {getFileSize(f.size)}
+                            </Badge>
+                          </Flex>
+                        )}
+                      </For>
+                    </VStack>
+                  </Box>
+                </Show>
+              </Box>
+            )
+          }}
+        </For>
+      </Show>
+    </VStack>
+  )
+}
+
 // ==================== Dedup 主页面 ====================
 
 const Dedup: Component = () => {
@@ -1404,9 +2129,12 @@ const Dedup: Component = () => {
   const [maxDepth, setMaxDepth] = createSignal(10)
   const [taskId, setTaskId] = createSignal(searchParams.task_id ?? "")
   const [taskStatus, setTaskStatus] = createSignal<DedupStatusResp>()
-  const [activeTab, setActiveTab] = createSignal<"duplicates" | "candidates">(
-    "duplicates",
-  )
+  const [activeTab, setActiveTab] = createSignal<
+    "duplicates" | "candidates" | "folders"
+  >("duplicates")
+  const [selectedFolderPair, setSelectedFolderPair] =
+    createSignal<DedupFolderPair | null>(null)
+  const [mergeModalOpen, setMergeModalOpen] = createSignal(false)
   const [refreshKey, setRefreshKey] = createSignal(0)
   const [starting, doStart] = useFetch(dedupStart)
   const [canceling, doCancel] = useFetch(dedupCancel)
@@ -1897,6 +2625,14 @@ const Dedup: Component = () => {
               {t("dedup.tabs.candidates")} (
               {taskStatus()?.stats.candidate_groups ?? 0})
             </Button>
+            <Button
+              size="sm"
+              variant={activeTab() === "folders" ? "solid" : "subtle"}
+              colorScheme="accent"
+              onClick={() => setActiveTab("folders")}
+            >
+              📁 {t("dedup.tabs.folders")}
+            </Button>
           </HStack>
 
           <Show when={activeTab() === "duplicates"}>
@@ -1923,6 +2659,17 @@ const Dedup: Component = () => {
               verified={false}
               refreshKey={refreshKey()}
               onRequestClean={() => {}}
+            />
+          </Show>
+
+          <Show when={activeTab() === "folders"}>
+            <FolderPairList
+              taskId={taskId()}
+              refreshKey={refreshKey()}
+              onOpenMerge={(pair) => {
+                setSelectedFolderPair(pair)
+                setMergeModalOpen(true)
+              }}
             />
           </Show>
         </Show>
@@ -1978,6 +2725,18 @@ const Dedup: Component = () => {
         reclaimSize={cleanReclaimSize()}
         opened={cleanModalOpen()}
         onClose={() => setCleanModalOpen(false)}
+        onDone={() => {
+          setRefreshKey((k) => k + 1)
+          if (taskId()) fetchStatus(taskId())
+        }}
+      />
+
+      {/* 重复文件夹合并确认弹窗 */}
+      <MergeFoldersModal
+        taskId={taskId()}
+        pair={selectedFolderPair()}
+        opened={mergeModalOpen()}
+        onClose={() => setMergeModalOpen(false)}
         onDone={() => {
           setRefreshKey((k) => k + 1)
           if (taskId()) fetchStatus(taskId())
