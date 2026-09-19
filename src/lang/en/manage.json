@@ -18,6 +18,7 @@
     "copy": "Copy",
     "move": "Move",
     "decompress": "Decompress",
+    "dedup": "Clean",
     "backup-restore": "Backup & Restore",
     "home": "Home",
     "indexes": "Indexes",

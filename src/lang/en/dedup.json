@@ -1,0 +1,77 @@
+{
+  "title": "Duplicate File Cleanup",
+  "desc": "Scan and clean duplicate files in your storage to free up space",
+  "scan": {
+    "root": "Scan Root Path",
+    "concurrency": "Concurrency",
+    "qps": "QPS Limit",
+    "max_depth": "Max Depth",
+    "tips": "💡 Tip: Deduplication groups by size first, then verifies with content Hash. Scanning is read-only and safe. Deletions require explicit confirmation.",
+    "start": "Start Scan",
+    "cancel": "Cancel Scan",
+    "started": "Scan task started",
+    "finished": "Scan finished: found {{groups}} groups ({{files}} files)",
+    "path_required": "Please specify a scan path",
+    "no_hash_hint": "{{count}} files could not be fast-hashed by storage driver, grouped as candidates"
+  },
+  "tabs": {
+    "duplicates": "Verified Duplicates",
+    "candidates": "Name & Size Candidates",
+    "history": "History"
+  },
+  "stats": {
+    "scanned_dirs": "Scanned Dirs",
+    "scanned_files": "Scanned Files",
+    "verified": "Verified Files",
+    "unverified": "Unverified Files",
+    "dup_groups": "Duplicate Groups",
+    "wasted": "Reclaimable Space",
+    "failed_dirs": "Failed Dirs"
+  },
+  "result": {
+    "no_task": "No task selected or started",
+    "scanning": "Scanning in progress, please wait...",
+    "empty": "No duplicate files found, storage is clean 🎉",
+    "empty_candidates": "No name & size candidates",
+    "copies": "copies",
+    "reclaimable": "Reclaimable",
+    "keep_oldest": "Keep Oldest",
+    "keep_newest": "Keep Newest",
+    "select_group": "Select Group",
+    "keep_mark": "Keep",
+    "selected": "Selected {{count}} files",
+    "will_reclaim": "Will Reclaim",
+    "clear_selection": "Clear Selection",
+    "clean": "Clean Selected",
+    "candidate_warning": "⚠️ Candidate items are matched only by name and size without Hash verification. Please manually check before deleting!",
+    "keep_last_hint": "Must keep at least 1 copy per group"
+  },
+  "clean": {
+    "title": "Confirm Duplicate File Cleanup",
+    "desc": "About to permanently delete {{count}} duplicate files",
+    "delete_companions": "Also delete companion files (.srt, .nfo, .jpg, etc.)",
+    "remove_empty_dirs": "Remove empty parent directories after cleaning",
+    "warning": "⚠️ Deletion is irreversible, please proceed with caution!",
+    "confirm": "Confirm Clean",
+    "success": "Successfully cleaned {{count}} files",
+    "partial": "Clean completed: {{success}} succeeded, {{failed}} failed/skipped",
+    "report": "Clean report: {{success}} succeeded, {{failed}} failed",
+    "companion_removed": "Cleaned {{count}} companion files",
+    "empty_dirs_removed": "Removed {{count}} empty directories"
+  },
+  "state": {
+    "queued": "Queued",
+    "running": "Scanning",
+    "canceling": "Canceling",
+    "canceled": "Canceled",
+    "finished": "Finished",
+    "failed": "Failed",
+    "errored": "Errored",
+    "interrupted": "Interrupted",
+    "unknown": "Unknown"
+  },
+  "history": {
+    "empty": "No history scan records",
+    "delete": "Delete Record"
+  }
+}

@@ -12,6 +12,10 @@ import {
   TorrentInfo,
   TorrentUploadParseResult,
   TorrentRapidUploadResult,
+  DedupStatusResp,
+  DedupResultResp,
+  DedupHistoryResp,
+  DedupRemoveResp,
 } from "~/types"
 import { r } from "."
 
@@ -306,4 +310,77 @@ export const torrentRapidUpload = (
   path: string,
 ): PResp<TorrentRapidUploadResult> => {
   return r.post("/fs/torrent/rapid_upload", { torrent_data, path })
+}
+
+// ========== Dedup 重复文件清理 API ==========
+
+export const dedupStart = (
+  path: string,
+  max_depth: number,
+  concurrency: number,
+  qps: number,
+  min_size: number = 0,
+  include_exts: string[] = [],
+  exclude_exts: string[] = [],
+): PResp<{ task_id: string; config: any }> => {
+  return r.post("/dedup/start", {
+    path,
+    max_depth,
+    concurrency,
+    qps,
+    min_size,
+    include_exts,
+    exclude_exts,
+  })
+}
+
+export const dedupStatus = (task_id: string): PResp<DedupStatusResp> => {
+  return r.get("/dedup/status", { params: { task_id } })
+}
+
+export const dedupCancel = (task_id: string): PEmptyResp => {
+  return r.post("/dedup/cancel", { task_id })
+}
+
+export const dedupResult = (
+  task_id: string,
+  page: number = 1,
+  size: number = 20,
+  verified: string = "1",
+): PResp<DedupResultResp> => {
+  return r.get("/dedup/result", { params: { task_id, page, size, verified } })
+}
+
+export const dedupRemove = (
+  task_id: string,
+  paths: string[],
+  delete_companions: boolean,
+  remove_empty_dirs: boolean,
+): PResp<DedupRemoveResp> => {
+  return r.post("/dedup/remove", {
+    task_id,
+    paths,
+    delete_companions,
+    remove_empty_dirs,
+  })
+}
+
+export const dedupHistory = (
+  page: number = 1,
+  size: number = 20,
+  keyword: string = "",
+  status: string = "",
+): PResp<DedupHistoryResp> => {
+  return r.get("/dedup/history", { params: { page, size, keyword, status } })
+}
+
+export const dedupDeleteHistory = (id: string): PEmptyResp => {
+  return r.delete(`/dedup/history/${id}`)
+}
+
+export const dedupClearEmptyHistory = (): PResp<{
+  deleted: number
+  deleted_count: number
+}> => {
+  return r.post("/dedup/history/clear-empty")
 }

@@ -166,6 +166,13 @@ export const side_menu_items: SideMenuItem[] = [
         role: UserRole.GENERAL,
         component: lazy(() => import("./tasks/Decompress")),
       },
+      {
+        title: "manage.sidemenu.dedup",
+        icon: BsSearch,
+        to: "/@manage/tasks/dedup",
+        role: UserRole.GENERAL,
+        component: lazy(() => import("./tasks/Dedup")),
+      },
     ],
   },
   {
