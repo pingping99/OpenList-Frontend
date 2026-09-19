@@ -123,5 +123,22 @@
   "history": {
     "empty": "No history scan records",
     "delete": "Delete Record"
+  },
+  "reanalyze": {
+    "title": "Fast Snapshot Re-analysis",
+    "desc": "Re-aggregate duplicates instantly from local historical snapshot, without rescanning remote storage or recalculating hashes. Typically takes under a second.",
+    "base_task": "Base Snapshot Task",
+    "snapshot_files": "Snapshot Files",
+    "min_size": "Min File Size (MB)",
+    "include_exts": "Include Extensions",
+    "exclude_exts": "Exclude Extensions",
+    "btn": "Run Fast Re-analysis",
+    "success": "Fast Re-analysis complete! Found {{groups}} duplicate groups ({{files}} files)"
+  },
+  "incremental": {
+    "enable": "Enable Incremental Scan (Reuse Cached Hash)",
+    "base_id": "Base Task ID",
+    "base_id_placeholder": "Leave empty to use latest snapshot",
+    "hit_stats": "Incremental Hit: {{files}} files ({{bytes}})"
   }
 }

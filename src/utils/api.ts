@@ -20,6 +20,8 @@ import {
   DedupFolderFilesResp,
   DedupMergeFoldersReq,
   DedupMergeFoldersResp,
+  DedupReanalyzeReq,
+  DedupReanalyzeResp,
 } from "~/types"
 import { r } from "."
 
@@ -326,6 +328,8 @@ export const dedupStart = (
   min_size: number = 0,
   include_exts: string[] = [],
   exclude_exts: string[] = [],
+  incremental: boolean = false,
+  base_task_id: string = "",
 ): PResp<{ task_id: string; config: any }> => {
   return r.post("/dedup/start", {
     path,
@@ -335,7 +339,15 @@ export const dedupStart = (
     min_size,
     include_exts,
     exclude_exts,
+    incremental,
+    base_task_id,
   })
+}
+
+export const dedupReanalyze = (
+  data: DedupReanalyzeReq,
+): PResp<DedupReanalyzeResp> => {
+  return r.post("/dedup/reanalyze", data)
 }
 
 export const dedupStatus = (task_id: string = ""): PResp<DedupStatusResp> => {

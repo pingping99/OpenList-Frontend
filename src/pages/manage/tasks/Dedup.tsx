@@ -53,6 +53,7 @@ import {
   DedupFolderPair,
   DedupFolderMatchedFile,
   DedupMergeFoldersResp,
+  DedupReanalyzeReq,
 } from "~/types"
 import { formatDate, getFileSize, handleResp, notify } from "~/utils"
 import {
@@ -66,6 +67,7 @@ import {
   dedupClearEmptyHistory,
   dedupFolders,
   dedupMergeFolders,
+  dedupReanalyze,
 } from "~/utils/api"
 import { BsSearch, BsArrowRepeat } from "solid-icons/bs"
 
@@ -819,12 +821,177 @@ const MergeFoldersModal: Component<MergeFoldersModalProps> = (props) => {
   )
 }
 
+// ==================== ReanalyzeModal 组件 ====================
+
+interface ReanalyzeModalProps {
+  opened: boolean
+  onClose: () => void
+  task: DedupTaskHistoryItem | DedupStatusResp | null
+  onSuccess: (newTaskId: string) => void
+}
+
+const ReanalyzeModal: Component<ReanalyzeModalProps> = (props) => {
+  const t = useT()
+  const [minSizeMB, setMinSizeMB] = createSignal(0)
+  const [incExts, setIncExts] = createSignal("")
+  const [excExts, setExcExts] = createSignal("")
+  const [reanalyzing, doReanalyze] = useFetch(dedupReanalyze)
+
+  createEffect(() => {
+    if (props.opened && props.task) {
+      const task = props.task as any
+      setMinSizeMB(
+        task.min_size ? Math.round(task.min_size / (1024 * 1024)) : 0,
+      )
+      setIncExts(task.include_exts || "")
+      setExcExts(task.exclude_exts || "")
+    }
+  })
+
+  const handleReanalyze = async () => {
+    if (!props.task) return
+    const taskId = (props.task as any).task_id || props.task.id
+    const minSizeBytes = (minSizeMB() || 0) * 1024 * 1024
+    const incList = incExts()
+      ? incExts()
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
+    const excList = excExts()
+      ? excExts()
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : []
+
+    const res = await doReanalyze({
+      task_id: taskId,
+      min_size: minSizeBytes,
+      include_exts: incList,
+      exclude_exts: excList,
+    })
+
+    handleResp(
+      res,
+      (data) => {
+        notify.success(
+          `快照重析完成！发现 ${data.dup_groups} 组重复 (${data.dup_files} 文件)，可释放 ${getFileSize(data.wasted_total)}`,
+        )
+        props.onSuccess(data.task_id)
+        props.onClose()
+      },
+      (err) => notify.error(err),
+    )
+  }
+
+  const snapshotCount = () => {
+    const task = props.task as any
+    return task?.snapshot_files || task?.scanned_files || 0
+  }
+
+  return (
+    <Modal
+      blockScrollOnMount={false}
+      opened={props.opened}
+      onClose={props.onClose}
+      size={{ "@initial": "xs", "@md": "md" }}
+    >
+      <ModalOverlay />
+      <ModalContent>
+        <ModalCloseButton />
+        <ModalHeader>⚡ 基于快照快速重析</ModalHeader>
+        <ModalBody>
+          <VStack alignItems="stretch" spacing="$3">
+            <Box
+              p="$2.5"
+              rounded="$md"
+              bgColor="$info2"
+              border="1px solid"
+              borderColor="$info6"
+            >
+              <Text fontSize="$xs" color="$info11" lineHeight="$tall">
+                💡 <strong>离线秒级重析</strong>
+                ：利用本地已缓存的完整文件快照，在毫秒级内按新条件重新聚合查重结果，
+                <strong>无需再次访问网盘或远程服务器</strong>。
+              </Text>
+            </Box>
+
+            <HStack spacing="$2" flexWrap="wrap">
+              <Badge colorScheme="info">
+                目录: {props.task?.root_path || "/"}
+              </Badge>
+              <Badge colorScheme="accent">快照总文件: {snapshotCount()}</Badge>
+            </HStack>
+
+            <FormControl>
+              <FormLabel fontSize="$xs">最小文件大小 (MB)</FormLabel>
+              <Input
+                size="sm"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="0 表示不过滤"
+                value={minSizeMB()}
+                onInput={(e: any) =>
+                  setMinSizeMB(parseFloat(e.currentTarget.value) || 0)
+                }
+              />
+              <FormHelperText fontSize="$xs">
+                例如填 100 将只查重 100MB 以上的大文件
+              </FormHelperText>
+            </FormControl>
+
+            <FormControl>
+              <FormLabel fontSize="$xs">仅包含后缀 (逗号分隔)</FormLabel>
+              <Input
+                size="sm"
+                placeholder="如: mp4, mkv, iso"
+                value={incExts()}
+                onInput={(e: any) => setIncExts(e.currentTarget.value)}
+              />
+              <FormHelperText fontSize="$xs">
+                留空表示不限制文件类型
+              </FormHelperText>
+            </FormControl>
+
+            <FormControl>
+              <FormLabel fontSize="$xs">排除后缀 (逗号分隔)</FormLabel>
+              <Input
+                size="sm"
+                placeholder="如: tmp, log, bak"
+                value={excExts()}
+                onInput={(e: any) => setExcExts(e.currentTarget.value)}
+              />
+            </FormControl>
+          </VStack>
+        </ModalBody>
+        <ModalFooter display="flex" gap="$2">
+          <Spacer />
+          <Button onClick={props.onClose} colorScheme="neutral" size="sm">
+            {t("global.cancel")}
+          </Button>
+          <Button
+            colorScheme="accent"
+            size="sm"
+            loading={reanalyzing()}
+            onClick={handleReanalyze}
+          >
+            ⚡ 开始离线重析
+          </Button>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  )
+}
+
 // ==================== HistoryDrawerContent 组件 ====================
 
 interface HistoryDrawerProps {
   refreshKey: number
   onSelect: (item: DedupTaskHistoryItem) => void
   onReuse?: (item: DedupTaskHistoryItem) => void
+  onReanalyze?: (item: DedupTaskHistoryItem) => void
   onDeleted: () => void
 }
 
@@ -1036,6 +1203,18 @@ const HistoryDrawerContent: Component<HistoryDrawerProps> = (props) => {
                     <Badge colorScheme={stInfo.color} fontSize="$xs">
                       {stInfo.label}
                     </Badge>
+                    <Show
+                      when={item.is_snapshot || (item.snapshot_files ?? 0) > 0}
+                    >
+                      <Badge colorScheme="warning" fontSize="$xs">
+                        快照 ({item.snapshot_files ?? 0})
+                      </Badge>
+                    </Show>
+                    <Show when={(item.cached_files ?? 0) > 0}>
+                      <Badge colorScheme="success" fontSize="$xs">
+                        增量复用 {item.cached_files}
+                      </Badge>
+                    </Show>
                     <Text
                       fontSize="$sm"
                       fontWeight="$semibold"
@@ -1134,6 +1313,18 @@ const HistoryDrawerContent: Component<HistoryDrawerProps> = (props) => {
                     >
                       🔄 复用配置
                     </Button>
+                    <Show
+                      when={item.is_snapshot || (item.snapshot_files ?? 0) > 0}
+                    >
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        colorScheme="warning"
+                        onClick={() => props.onReanalyze?.(item)}
+                      >
+                        ⚡ 快照重析
+                      </Button>
+                    </Show>
                     <Spacer />
                     <Button
                       size="xs"
@@ -2534,6 +2725,12 @@ const Dedup: Component = () => {
   const [incExts, setIncExts] = createSignal("")
   const [excExts, setExcExts] = createSignal("")
   const [showAdv, setShowAdv] = createSignal(false)
+  const [incremental, setIncremental] = createSignal(true)
+  const [baseTaskId, setBaseTaskId] = createSignal("")
+  const [reanalyzeModalOpen, setReanalyzeModalOpen] = createSignal(false)
+  const [reanalyzeTask, setReanalyzeTask] = createSignal<
+    DedupTaskHistoryItem | DedupStatusResp | null
+  >(null)
 
   const isScanning = createMemo(() =>
     RUNNING_STATES.includes(taskStatus()?.state ?? ""),
@@ -2612,6 +2809,8 @@ const Dedup: Component = () => {
       minSizeBytes,
       incList,
       excList,
+      incremental(),
+      baseTaskId() || undefined,
     )
     handleResp(
       res,
@@ -2807,14 +3006,24 @@ const Dedup: Component = () => {
             flexWrap="wrap"
             gap="$2"
           >
-            <Button
-              size="sm"
-              variant="ghost"
-              colorScheme="neutral"
-              onClick={() => setShowAdv((prev) => !prev)}
-            >
-              {showAdv() ? "收起高级过滤 ▲" : "高级过滤选项 ▼"}
-            </Button>
+            <HStack spacing="$3" alignItems="center" flexWrap="wrap">
+              <Checkbox
+                checked={incremental()}
+                onChange={(e: any) => setIncremental(e.target.checked)}
+              >
+                <Text fontSize="$xs" color="$neutral11">
+                  ⚡ 启用增量扫描 (复用历史哈希)
+                </Text>
+              </Checkbox>
+              <Button
+                size="sm"
+                variant="ghost"
+                colorScheme="neutral"
+                onClick={() => setShowAdv((prev) => !prev)}
+              >
+                {showAdv() ? "收起高级过滤 ▲" : "高级过滤选项 ▼"}
+              </Button>
+            </HStack>
             <HStack spacing="$2" alignItems="center">
               <Show when={isScanning()}>
                 <Button
@@ -2878,6 +3087,14 @@ const Dedup: Component = () => {
                   placeholder="如: tmp, log, bak"
                   value={excExts()}
                   onInput={(e: any) => setExcExts(e.currentTarget.value)}
+                />
+              </FormControl>
+              <FormControl flex="2 1 140px" minW="130px">
+                <FormLabel>基准任务 ID (可选)</FormLabel>
+                <Input
+                  placeholder="留空自动选用最新快照"
+                  value={baseTaskId()}
+                  onInput={(e: any) => setBaseTaskId(e.currentTarget.value)}
                 />
               </FormControl>
             </HStack>
@@ -2946,6 +3163,24 @@ const Dedup: Component = () => {
               {t("dedup.stats.wasted")}:{" "}
               {getFileSize(stats()?.wasted_bytes ?? 0)}
             </Text>
+            <Show when={(stats()?.cached_files ?? 0) > 0}>
+              <Text fontSize="$xs" color="$accent11">
+                ⚡ 增量命中: {stats()?.cached_files} 文件 (
+                {getFileSize(stats()?.cached_bytes ?? 0)})
+              </Text>
+            </Show>
+            <Show
+              when={
+                taskStatus()?.is_snapshot ||
+                (taskStatus()?.snapshot_files ?? 0) > 0
+              }
+            >
+              <Text fontSize="$xs" color="$warning11">
+                💾 已存档快照:{" "}
+                {taskStatus()?.snapshot_files ?? stats()?.scanned_files ?? 0}{" "}
+                个文件
+              </Text>
+            </Show>
             <Show when={(stats()?.failed_dirs ?? 0) > 0}>
               <Text fontSize="$xs" color="$warning11">
                 {t("dedup.stats.failed_dirs")}: {stats()?.failed_dirs}
@@ -2994,7 +3229,7 @@ const Dedup: Component = () => {
             </Box>
           }
         >
-          <HStack spacing="$2" flexWrap="wrap">
+          <HStack spacing="$2" flexWrap="wrap" alignItems="center">
             <Button
               size="sm"
               variant={activeTab() === "duplicates" ? "solid" : "subtle"}
@@ -3021,6 +3256,27 @@ const Dedup: Component = () => {
             >
               📁 {t("dedup.tabs.folders")}
             </Button>
+            <Spacer />
+            <Show
+              when={
+                taskStatus()?.is_snapshot ||
+                (taskStatus()?.snapshot_files ?? 0) > 0
+              }
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                colorScheme="warning"
+                onClick={() => {
+                  if (taskStatus()) {
+                    setReanalyzeTask(taskStatus()!)
+                    setReanalyzeModalOpen(true)
+                  }
+                }}
+              >
+                ⚡ 快照秒级重析
+              </Button>
+            </Show>
           </HStack>
 
           <Show when={activeTab() === "duplicates"}>
@@ -3101,6 +3357,11 @@ const Dedup: Component = () => {
                 setDrawerOpen(false)
                 notify.success(`已复用任务 [${item.root_path}] 的扫描配置`)
               }}
+              onReanalyze={(item) => {
+                setReanalyzeTask(item)
+                setDrawerOpen(false)
+                setReanalyzeModalOpen(true)
+              }}
             />
           </DrawerBody>
         </DrawerContent>
@@ -3128,6 +3389,19 @@ const Dedup: Component = () => {
         onDone={() => {
           setRefreshKey((k) => k + 1)
           if (taskId()) fetchStatus(taskId())
+        }}
+      />
+
+      {/* 快照秒级重析配置弹窗 */}
+      <ReanalyzeModal
+        sourceTask={reanalyzeTask()}
+        opened={reanalyzeModalOpen()}
+        onClose={() => setReanalyzeModalOpen(false)}
+        onSuccess={(newTaskId) => {
+          setTaskId(newTaskId)
+          setActiveTab("duplicates")
+          setRefreshKey((k) => k + 1)
+          fetchStatus(newTaskId)
         }}
       />
     </VStack>

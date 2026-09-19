@@ -9,6 +9,8 @@ export interface DedupScanStats {
   wasted_bytes: number
   candidate_groups: number
   candidate_files: number
+  cached_files?: number
+  cached_bytes?: number
 }
 
 export interface DedupStatusResp {
@@ -22,6 +24,11 @@ export interface DedupStatusResp {
   start_time?: string
   end_time?: string
   error?: string
+  is_snapshot?: boolean
+  snapshot_files?: number
+  cached_files?: number
+  incremental?: boolean
+  base_task_id?: string
 }
 
 export interface DedupFileItem {
@@ -78,6 +85,11 @@ export interface DedupTaskHistoryItem {
   started_at: string
   ended_at?: string
   error?: string
+  is_snapshot?: boolean
+  snapshot_files?: number
+  cached_files?: number
+  incremental?: boolean
+  base_task_id?: string
 }
 
 export interface DedupHistoryResp {
@@ -148,4 +160,21 @@ export interface DedupMergeFoldersResp {
   reclaimed_bytes: number
   source_removed: boolean
   errors?: string[]
+}
+
+export interface DedupReanalyzeReq {
+  task_id: string
+  min_size?: number
+  include_exts?: string[]
+  exclude_exts?: string[]
+}
+
+export interface DedupReanalyzeResp {
+  task_id: string
+  dup_groups: number
+  dup_files: number
+  wasted_total: number
+  candidate_groups: number
+  candidate_files: number
+  snapshot_files: number
 }
