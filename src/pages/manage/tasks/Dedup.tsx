@@ -1193,6 +1193,8 @@ const ResultList: Component<ResultListProps> = (props) => {
   const [selectedPaths, setSelectedPaths] = createSignal<string[]>([])
   const [fetching, getResult] = useFetch(dedupResult)
   const [kw, setKw] = createSignal("")
+  const [searchKw, setSearchKw] = createSignal("")
+  const [smartPathKw, setSmartPathKw] = createSignal("")
   let resetPaginator: (() => void) | undefined
 
   const loadResult = async () => {
@@ -1206,6 +1208,7 @@ const ResultList: Component<ResultListProps> = (props) => {
       page(),
       20,
       props.verified ? "1" : "0",
+      searchKw().trim() || undefined,
     )
     handleResp(
       res,
@@ -1220,18 +1223,39 @@ const ResultList: Component<ResultListProps> = (props) => {
     )
   }
 
+  const triggerSearch = (val?: string) => {
+    const nextKw = (val !== undefined ? val : kw()).trim()
+    setKw(nextKw)
+    setSearchKw(nextKw)
+    setPage(1)
+    resetPaginator?.()
+  }
+
+  const clearSearch = () => {
+    setKw("")
+    setSearchKw("")
+    setPage(1)
+    resetPaginator?.()
+  }
+
+  // 当任务、验证类型或刷新信号变更时重置全部查询状态
   createEffect(() => {
     props.taskId
     props.verified
     props.refreshKey
+    setKw("")
+    setSearchKw("")
+    setSmartPathKw("")
     setPage(1)
     resetPaginator?.()
   })
 
+  // 依赖项、搜索词或页码变化时加载数据
   createEffect(() => {
     props.taskId
     props.verified
     props.refreshKey
+    searchKw()
     page()
     setSelectedPaths([])
     loadResult()
@@ -1303,7 +1327,7 @@ const ResultList: Component<ResultListProps> = (props) => {
   }
 
   const smartPath = (action: "keep" | "clean") => {
-    const term = (kw() || "").trim().toLowerCase()
+    const term = (smartPathKw() || searchKw() || "").trim().toLowerCase()
     if (!term) {
       notify.warning("请输入路径关键词（如 /backup/）")
       return
@@ -1370,6 +1394,51 @@ const ResultList: Component<ResultListProps> = (props) => {
 
   return (
     <VStack w="$full" alignItems="stretch" spacing="$3">
+      {/* 专属搜索过滤工具栏 */}
+      <HStack
+        spacing="$2"
+        p="$2_5"
+        rounded="$lg"
+        bgColor="$neutral1"
+        border="1px solid"
+        borderColor="$neutral4"
+        alignItems="center"
+        flexWrap="wrap"
+      >
+        <Input
+          size="sm"
+          flex="1 1 200px"
+          placeholder={
+            t("dedup.result.search_placeholder") ||
+            "搜索文件名、路径或特征哈希..."
+          }
+          value={kw()}
+          onInput={(e: any) => setKw(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              triggerSearch()
+            }
+          }}
+        />
+        <Button
+          size="sm"
+          colorScheme="accent"
+          variant="solid"
+          onClick={() => triggerSearch()}
+        >
+          {t("dedup.result.search") || "搜索"}
+        </Button>
+        <Show when={searchKw()}>
+          <Button size="sm" variant="ghost" onClick={clearSearch}>
+            {t("dedup.result.clear") || "清空"}
+          </Button>
+          <Badge colorScheme="info" variant="subtle" fontSize="$xs">
+            {t("dedup.result.search_matches", { count: total() }) ||
+              `匹配到 ${total()} 组`}
+          </Badge>
+        </Show>
+      </HStack>
+
       <Show
         when={!fetching()}
         fallback={
@@ -1388,9 +1457,19 @@ const ResultList: Component<ResultListProps> = (props) => {
               bgColor="$neutral2"
               color="$neutral10"
             >
-              {props.verified
-                ? t("dedup.result.empty")
-                : t("dedup.result.empty_candidates")}
+              {searchKw()
+                ? t("dedup.result.search_empty", { kw: searchKw() }) ||
+                  `未找到包含「${searchKw()}」的重复分组`
+                : props.verified
+                  ? t("dedup.result.empty")
+                  : t("dedup.result.empty_candidates")}
+              <Show when={searchKw()}>
+                <Box mt="$3">
+                  <Button size="xs" variant="subtle" onClick={clearSearch}>
+                    {t("dedup.result.clear_condition") || "清空搜索条件"}
+                  </Button>
+                </Box>
+              </Show>
             </Box>
           }
         >
@@ -1501,9 +1580,13 @@ const ResultList: Component<ResultListProps> = (props) => {
                 size="xs"
                 flex="1 1 140px"
                 minW="120px"
-                placeholder="路径关键词如 /backup/"
-                value={kw()}
-                onInput={(e: any) => setKw(e.currentTarget.value)}
+                placeholder={
+                  searchKw()
+                    ? `路径关键词 (默认: ${searchKw()})`
+                    : "路径关键词如 /backup/"
+                }
+                value={smartPathKw()}
+                onInput={(e: any) => setSmartPathKw(e.currentTarget.value)}
               />
               <Button
                 size="xs"
@@ -1655,6 +1738,15 @@ const ResultList: Component<ResultListProps> = (props) => {
                           file.name.split(".").pop() || ""
                         ).toUpperCase()
                         const cat = getCategory(file.name)
+                        const isMatched = createMemo(() => {
+                          const sk = searchKw().trim().toLowerCase()
+                          if (!sk) return false
+                          return (
+                            file.path.toLowerCase().includes(sk) ||
+                            file.name.toLowerCase().includes(sk) ||
+                            g.group_key.toLowerCase().includes(sk)
+                          )
+                        })
 
                         return (
                           <HStack
@@ -1662,7 +1754,12 @@ const ResultList: Component<ResultListProps> = (props) => {
                             px="$2"
                             py="$2"
                             rounded="$md"
-                            _hover={{ bgColor: "$neutral3" }}
+                            bgColor={isMatched() ? "$info2" : undefined}
+                            border={isMatched() ? "1px solid" : undefined}
+                            borderColor={isMatched() ? "$info6" : undefined}
+                            _hover={{
+                              bgColor: isMatched() ? "$info3" : "$neutral3",
+                            }}
                             alignItems="flex-start"
                           >
                             <Show when={props.verified}>
@@ -1708,6 +1805,15 @@ const ResultList: Component<ResultListProps> = (props) => {
                                 >
                                   {file.path}
                                 </Text>
+                                <Show when={isMatched()}>
+                                  <Badge
+                                    colorScheme="info"
+                                    variant="solid"
+                                    fontSize="$xs"
+                                  >
+                                    {t("dedup.result.match") || "匹配"}
+                                  </Badge>
+                                </Show>
                                 <Button
                                   as="a"
                                   href={parentDir}
@@ -1963,7 +2069,7 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
             variant="subtle"
             onClick={() => setSearchKw(kw().trim())}
           >
-            {t("common.search") || "搜索"}
+            {t("dedup.result.search") || "搜索"}
           </Button>
           <Show when={searchKw()}>
             <Button
@@ -1974,7 +2080,7 @@ const FolderPairList: Component<FolderPairListProps> = (props) => {
                 setSearchKw("")
               }}
             >
-              {t("common.clear") || "清空"}
+              {t("dedup.result.clear") || "清空"}
             </Button>
           </Show>
           <Button

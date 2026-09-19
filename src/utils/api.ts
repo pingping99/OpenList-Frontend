@@ -351,8 +351,17 @@ export const dedupResult = (
   page: number = 1,
   size: number = 20,
   verified: string = "1",
+  kw?: string,
 ): PResp<DedupResultResp> => {
-  return r.get("/dedup/result", { params: { task_id, page, size, verified } })
+  return r.get("/dedup/result", {
+    params: {
+      task_id,
+      page,
+      size,
+      verified,
+      ...(kw ? { kw } : {}),
+    },
+  })
 }
 
 export const dedupRemove = (

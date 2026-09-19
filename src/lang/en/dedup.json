@@ -51,7 +51,14 @@
     "clear_selection": "Clear Selection",
     "clean": "Clean Selected",
     "candidate_warning": "⚠️ Candidate items are matched only by name and size without Hash verification. Please manually check before deleting!",
-    "keep_last_hint": "Must keep at least 1 copy per group"
+    "keep_last_hint": "Must keep at least 1 copy per group",
+    "search_placeholder": "Search file name, path or hash...",
+    "search_matches": "Matched {{count}} groups",
+    "search_empty": "No duplicate groups found containing '{{kw}}'",
+    "search": "Search",
+    "clear": "Clear",
+    "clear_condition": "Clear Search Filter",
+    "match": "Match"
   },
   "clean": {
     "title": "Confirm Duplicate File Cleanup",
