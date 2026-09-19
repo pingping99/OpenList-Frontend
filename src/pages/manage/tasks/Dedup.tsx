@@ -174,6 +174,81 @@ const calcGroupWasted = (
   }
   return group.size * Math.max(selectedCount - 1, 0)
 }
+const toTimeNumber = (n: number) => {
+  return Math.floor(n).toString().padStart(2, "0")
+}
+
+const getTimeStr = (millisecond: number) => {
+  if (millisecond <= 0 || isNaN(millisecond)) return "00:00:00"
+  const sec = Math.floor((millisecond / 1000) % 60)
+  const min = Math.floor((millisecond / 1000 / 60) % 60)
+  const hour = Math.floor(millisecond / 1000 / 3600)
+  return `${toTimeNumber(hour)}:${toTimeNumber(min)}:${toTimeNumber(sec)}`
+}
+
+export const TaskProgressBar: Component<{
+  progress?: number
+  isIndeterminate?: boolean
+  startTime?: string
+  statusText?: string
+}> = (props) => {
+  const [elapsed, setElapsed] = createSignal("00:00:00")
+
+  createEffect(() => {
+    if (!props.startTime) return
+    const startMs = new Date(props.startTime).getTime()
+    if (isNaN(startMs)) return
+    const update = () => {
+      const diff = Date.now() - startMs
+      setElapsed(getTimeStr(diff))
+    }
+    update()
+    const timer = setInterval(update, 1000)
+    onCleanup(() => clearInterval(timer))
+  })
+
+  return (
+    <VStack w="$full" spacing="$1_5" alignItems="stretch">
+      <HStack
+        justifyContent="space-between"
+        alignItems="center"
+        flexWrap="wrap"
+      >
+        <Text fontSize="$xs" color="$neutral11" fontWeight="$medium">
+          {props.statusText || "扫描进度"}
+        </Text>
+        <HStack spacing="$2" alignItems="center">
+          <Show when={props.startTime}>
+            <Text fontSize="$xs" color="$neutral10">
+              耗时: {elapsed()}
+            </Text>
+          </Show>
+          <Show
+            when={
+              props.progress !== undefined &&
+              props.progress > 0 &&
+              !props.isIndeterminate
+            }
+          >
+            <Badge colorScheme="info" fontSize="$xs">
+              {Math.round(props.progress!)}%
+            </Badge>
+          </Show>
+        </HStack>
+      </HStack>
+      <Progress
+        w="$full"
+        trackColor="$info3"
+        rounded="$full"
+        size="sm"
+        value={props.progress ?? 0}
+        indeterminate={props.isIndeterminate}
+      >
+        <ProgressIndicator color="$info8" rounded="$full" />
+      </Progress>
+    </VStack>
+  )
+}
 
 // ==================== CleanModal 组件 ====================
 
@@ -602,6 +677,22 @@ const HistoryDrawerContent: Component<HistoryDrawerProps> = (props) => {
                     </Text>
                   </HStack>
 
+                  <Show
+                    when={
+                      item.state === "running" ||
+                      item.state === "queued" ||
+                      item.state === "canceling"
+                    }
+                  >
+                    <Box mt="$2">
+                      <TaskProgressBar
+                        isIndeterminate={true}
+                        startTime={item.started_at}
+                        statusText="正在后台扫描中..."
+                      />
+                    </Box>
+                  </Show>
+
                   <Show when={!!cfgStr}>
                     <Text fontSize="$xs" color="$neutral10" mt="$1_5">
                       ⚙️ 配置: {cfgStr}
@@ -640,16 +731,28 @@ const HistoryDrawerContent: Component<HistoryDrawerProps> = (props) => {
                     <Button
                       size="xs"
                       colorScheme={
-                        isPending ? "accent" : isCleaned ? "success" : "info"
+                        item.state === "running"
+                          ? "info"
+                          : isPending
+                            ? "accent"
+                            : isCleaned
+                              ? "success"
+                              : "info"
                       }
-                      variant={isPending ? "solid" : "subtle"}
+                      variant={
+                        item.state === "running" || isPending
+                          ? "solid"
+                          : "subtle"
+                      }
                       onClick={() => props.onSelect(item)}
                     >
-                      {isPending
-                        ? "🚀 继续处理"
-                        : isCleaned
-                          ? "查看结果"
-                          : "载入此任务"}
+                      {item.state === "running"
+                        ? "🚀 查看实时进度"
+                        : isPending
+                          ? "🚀 继续处理"
+                          : isCleaned
+                            ? "查看结果"
+                            : "载入此任务"}
                     </Button>
                     <Button
                       size="xs"
@@ -1331,6 +1434,7 @@ const Dedup: Component = () => {
   onCleanup(stopPoll)
 
   const fetchStatus = async (tid: string) => {
+    if (!tid) return
     const res = await dedupStatus(tid)
     handleResp(
       res,
@@ -1351,7 +1455,12 @@ const Dedup: Component = () => {
           }
         }
       },
-      () => {},
+      () => {
+        stopPoll()
+        if (localStorage.getItem("last_dedup_task_id") === tid) {
+          localStorage.removeItem("last_dedup_task_id")
+        }
+      },
     )
   }
 
@@ -1391,11 +1500,13 @@ const Dedup: Component = () => {
     handleResp(
       res,
       (data) => {
-        setTaskId(data.task_id)
+        const tid = data.task_id || data.id
+        setTaskId(tid)
+        localStorage.setItem("last_dedup_task_id", tid)
         setTaskStatus(undefined)
         setActiveTab("duplicates")
         setRefreshKey((k) => k + 1)
-        startPoll(data.task_id)
+        startPoll(tid)
         if (!silent) {
           notify.success(t("dedup.scan.started"))
         }
@@ -1415,9 +1526,46 @@ const Dedup: Component = () => {
     }
   })
 
+  // 页面初次加载时：探测正在运行的长任务或恢复上次查看的任务
+  let autoResumed = false
+  createEffect(async () => {
+    if (autoResumed) return
+    autoResumed = true
+
+    if (!searchParams.task_id) {
+      try {
+        const res = await dedupStatus("")
+        if (
+          res.code === 200 &&
+          res.data &&
+          RUNNING_STATES.includes(res.data.state)
+        ) {
+          const tid = res.data.task_id || res.data.id
+          if (tid) {
+            setTaskId(tid)
+            setTaskStatus(res.data)
+            if (res.data.root_path) setPath(res.data.root_path)
+            localStorage.setItem("last_dedup_task_id", tid)
+            startPoll(tid)
+            notify.info("检测到后台正在进行的扫描任务，已自动恢复进度看板")
+            return
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+
+      const lastTid = localStorage.getItem("last_dedup_task_id")
+      if (lastTid) {
+        setTaskId(lastTid)
+      }
+    }
+  })
+
   createEffect(() => {
     const tid = taskId()
     if (tid) {
+      localStorage.setItem("last_dedup_task_id", tid)
       fetchStatus(tid)
       if (!pollTimer) {
         startPoll(tid)
@@ -1460,6 +1608,24 @@ const Dedup: Component = () => {
       </Text>
 
       {/* 扫描设置面板 */}
+      <Show when={isScanning()}>
+        <Box
+          p="$3"
+          rounded="$lg"
+          bgColor="$info3"
+          border="1px solid"
+          borderColor="$info6"
+        >
+          <HStack spacing="$2" alignItems="center">
+            <Spinner size="xs" color="$info10" />
+            <Text fontSize="$xs" color="$info11" fontWeight="$medium">
+              后台正在持续扫描目录 [{taskStatus()?.root_path || path()}]...
+              退出浏览器或刷新页面不会中断任务。
+            </Text>
+          </HStack>
+        </Box>
+      </Show>
+
       <Box
         border="1px solid"
         borderColor="$neutral5"
@@ -1627,16 +1793,24 @@ const Dedup: Component = () => {
             </Text>
           </HStack>
 
-          <Show when={isScanning()}>
-            <Progress
-              mt="$3"
-              size="sm"
-              value={taskStatus()!.progress}
-              indeterminate
-            >
-              <ProgressIndicator />
-            </Progress>
-          </Show>
+          <Box mt="$3">
+            <TaskProgressBar
+              progress={
+                taskStatus()!.state === "finished"
+                  ? 100
+                  : taskStatus()!.progress
+              }
+              isIndeterminate={
+                isScanning() &&
+                (!taskStatus()!.progress || taskStatus()!.progress <= 0)
+              }
+              startTime={taskStatus()!.start_time}
+              statusText={
+                taskStatus()!.status ||
+                (taskStatus()!.state === "finished" ? "扫描完成" : "扫描进行中")
+              }
+            />
+          </Box>
 
           <HStack spacing="$3" mt="$3" flexWrap="wrap">
             <Text fontSize="$xs" color="$neutral11">

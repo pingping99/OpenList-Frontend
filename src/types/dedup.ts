@@ -13,6 +13,7 @@ export interface DedupScanStats {
 
 export interface DedupStatusResp {
   id: string
+  task_id?: string
   root_path: string
   state: string
   status: string

@@ -334,8 +334,8 @@ export const dedupStart = (
   })
 }
 
-export const dedupStatus = (task_id: string): PResp<DedupStatusResp> => {
-  return r.get("/dedup/status", { params: { task_id } })
+export const dedupStatus = (task_id: string = ""): PResp<DedupStatusResp> => {
+  return r.get("/dedup/status", { params: task_id ? { task_id } : {} })
 }
 
 export const dedupCancel = (task_id: string): PEmptyResp => {
